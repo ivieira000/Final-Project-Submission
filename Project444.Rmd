@@ -1,0 +1,486 @@
+---
+title: "Final Project"
+author: "Isabela Vieira & Monica Martinez-Raga"
+date: "12/18/2020"
+output: github_document
+always_allow_html: true
+---
+
+For this project, we will be using IPUMS data to perform an inputation in the BRFSS dataset. Below we load and attach both datasets:
+```{r}
+load("~/Documents/College/Fall 2020/Econometrics/acs2017_ny_data.RData")
+BRFSS_USE <- readRDS("~/Documents/College/Fall 2020/Econometrics/Final Project/FINAL PROJECT/BRFSS_USE.rds")
+attach(acs2017_ny)
+attach(BRFSS_USE)
+
+```
+
+
+Before anything, we will add a borough variable so we can get a summary statistics of the population in each of the five boroughs:
+```{r}
+acs2017_ny$borough <- factor((in_Bronx + 2*in_Manhattan + 3*in_StatenI + 4*in_Brooklyn + 5*in_Queens), levels=c(1,2,3,4,5),labels = c("Bronx","Manhattan","Staten Island","Brooklyn","Queens"))
+```
+
+Table w/ summary statistics for household income per borough:
+
+```{r}
+library(table1)
+table1::label(acs2017_ny$HHINCOME) <- "Household Income"
+
+table1::table1(~HHINCOME | borough, data = acs2017_ny)
+```
+
+Before we perform the imputation we need to convert our variables to factors (because BRFSS data is mostly divided in levels) and make sure that the levels for each variable are equivalent in both datasets.
+
+
+Recoding ACS:
+```{r, echo=FALSE}
+#Income variable
+
+library(forcats)
+
+acs2017_ny$INCOME2[acs2017_ny$HHINCOME > 0 & acs2017_ny$HHINCOME < 10000] = "10000"
+acs2017_ny$INCOME2[acs2017_ny$HHINCOME >= 10000 & acs2017_ny$HHINCOME < 15000] = "15000"
+acs2017_ny$INCOME2[acs2017_ny$HHINCOME >= 15000 & acs2017_ny$HHINCOME < 20000] = "20000"
+acs2017_ny$INCOME2[acs2017_ny$HHINCOME >= 20000 & acs2017_ny$HHINCOME < 25000] = "25000"
+acs2017_ny$INCOME2[acs2017_ny$HHINCOME >= 25000 & acs2017_ny$HHINCOME < 35000] = "35000"
+acs2017_ny$INCOME2[acs2017_ny$HHINCOME >= 35000 & acs2017_ny$HHINCOME < 50000] = "50000"
+acs2017_ny$INCOME2[acs2017_ny$HHINCOME >= 50000 & acs2017_ny$HHINCOME < 75000] = "75000"
+acs2017_ny$INCOME2[acs2017_ny$HHINCOME >= 75000] = "2030000"
+
+acs2017_ny$INCOME2 = factor(acs2017_ny$INCOME2,levels=c("10000", "15000", "20000","25000","35000","50000","75000","2030000"))
+
+#Age 
+acs2017_ny$AGE[acs2017_ny$AGE >= 18 & acs2017_ny$AGE <= 24] = "18"
+acs2017_ny$AGE[acs2017_ny$AGE >= 25 & acs2017_ny$AGE <= 29] = "25"
+acs2017_ny$AGE[acs2017_ny$AGE >= 30 & acs2017_ny$AGE <= 34] = "30"
+acs2017_ny$AGE[acs2017_ny$AGE >= 35 & acs2017_ny$AGE <= 39] = "35"
+acs2017_ny$AGE[acs2017_ny$AGE >= 40 & acs2017_ny$AGE <= 44] = "40"
+acs2017_ny$AGE[acs2017_ny$AGE >= 45 & acs2017_ny$AGE <= 49] = "45"
+acs2017_ny$AGE[acs2017_ny$AGE >= 50 & acs2017_ny$AGE <= 54] = "50"
+acs2017_ny$AGE[acs2017_ny$AGE >= 55 & acs2017_ny$AGE <= 59] = "55"
+acs2017_ny$AGE[acs2017_ny$AGE >= 60 & acs2017_ny$AGE <= 64] = "60"
+acs2017_ny$AGE[acs2017_ny$AGE >= 65 & acs2017_ny$AGE <= 69] = "65"
+acs2017_ny$AGE[acs2017_ny$AGE >= 70 & acs2017_ny$AGE <= 74] = "70"
+acs2017_ny$AGE[acs2017_ny$AGE >= 75 & acs2017_ny$AGE <= 79] = "75"
+acs2017_ny$AGE[acs2017_ny$AGE >= 80] = "80"
+
+acs2017_ny$AGE = factor(acs2017_ny$AGE,levels=c("18","25","30","35","40","45","50","55","60","65","70","75","80"))
+
+
+#Ownership 
+
+is.na(acs2017_ny$OWNERSHP) <- which(acs2017_ny$OWNERSHP == 0)
+na.exclude(acs2017_ny$OWNERSHP)
+acs2017_ny$RENTHOM1 <- as.factor(acs2017_ny$OWNERSHP)
+levels(acs2017_ny$RENTHOM1) <- c("Owned","Rent")
+
+
+#Marital Status 
+
+acs2017_ny$MARST <- as.factor(acs2017_ny$MARST) #Have to change name in BRFSS
+levels(acs2017_ny$MARST) <- c("married","married2","separated","divorced","widowed","never.married")
+acs2017_ny$MARST <- fct_collapse(acs2017_ny$MARST, married = c("married","married2"))
+fct_relevel(acs2017_ny$MARST , "divorced", "married", "never.married","separated", "widowed")
+
+#Gender
+acs2017_ny$SEXVAR <- as.factor(acs2017_ny$female)
+levels(acs2017_ny$SEXVAR) <- c("Male","Female")
+
+#Race
+
+acs2017_ny$RACE <- as.factor(acs2017_ny$RACE) #Have to change name in BRFSS
+levels(acs2017_ny$RACE) <- c("White","Black","American Indian/Alaskan Native", "Chinese","Japanese","Asian other","Other Race","Two major races","Three or more major races")
+acs2017_ny$RACE <- fct_collapse(acs2017_ny$RACE, Asian = c("Chinese","Japanese","Asian other"))
+acs2017_ny$RACE <- fct_collapse(acs2017_ny$RACE, Multiracial = c("Two major races","Three or more major races"))
+fct_relevel(acs2017_ny$RACE, "American Indian/Alaskan Native", "Asian", "Black","Multiracial", "Other Race", "White")
+
+#Hispanic
+
+acs2017_ny$X_HISPANC <- as.factor(acs2017_ny$Hispanic)
+levels(acs2017_ny$X_HISPANC) <- c("No","Yes")
+fct_relevel(acs2017_ny$X_HISPANC, "Yes", "No")
+
+#Health Coverage
+
+acs2017_ny$HLTHPLN1 <- as.factor(acs2017_ny$HCOVANY)
+levels(acs2017_ny$HLTHPLN1) <- c("No","Yes")
+
+
+#In Labor force
+
+is.na(acs2017_ny$LABFORCE) <- which(acs2017_ny$LABFORCE == 0)
+na.exclude(acs2017_ny$LABFORCE)
+acs2017_ny$LABFORCE <- as.factor(acs2017_ny$LABFORCE)
+levels(acs2017_ny$LABFORCE) <- c("Not.in.LF","in.LF")
+
+#Education
+
+acs2017_ny$EDUC <- as.numeric(acs2017_ny$EDUC)
+is.na(acs2017_ny$EDUC) <- which(acs2017_ny$EDUC == 00)
+na.exclude(acs2017_ny$EDUC)
+acs2017_ny$EDUCA <- as.factor(acs2017_ny$EDUC)
+levels(acs2017_ny$EDUCA) <- c("n to 4","5 to 8","9","10","11","12", "College 1 year", "College 2 ", "College 3", "College 4 ", "College 5")
+acs2017_ny$EDUCA <- fct_collapse(acs2017_ny$EDUCA, Elementary = c("n to 4","5 to 8"))
+acs2017_ny$EDUCA <- fct_collapse(acs2017_ny$EDUCA, SomeHS = c("9","10","11"))
+acs2017_ny$EDUCA <- fct_collapse(acs2017_ny$EDUCA, HS = c("12"))
+acs2017_ny$EDUCA <- fct_collapse(acs2017_ny$EDUCA, SomeC = c("College 1 year", "College 2 ", "College 3"))
+acs2017_ny$EDUCA <- fct_collapse(acs2017_ny$EDUCA, College = c("College 4 ", "College 5"))
+
+acs2017_ny$in_NYC <- as.factor(acs2017_ny$in_NYC)
+levels(acs2017_ny$in_NYC) <- c("No","Yes")
+
+```
+
+
+Recoding for BRFSS:
+```{r, echo=FALSE}
+#INCOME
+is.na(BRFSS_USE$INCOME2) <- which(BRFSS_USE$INCOME2 == 99)
+is.na(BRFSS_USE$INCOME2) <- which(BRFSS_USE$INCOME2 == 77)
+na.exclude(BRFSS_USE$INCOME2)
+BRFSS_USE$INCOME2 <- as.factor(BRFSS_USE$INCOME2)
+levels(BRFSS_USE$INCOME2) <- c("0", "10000", "15000","20000","25000","35000","50000","75000","2030000")
+
+#Age Variable 
+
+is.na(BRFSS_USE$X_AGEG5YR) <- which(BRFSS_USE$X_AGEG5YR == 14)
+na.exclude(BRFSS_USE$X_AGEG5YR)
+BRFSS_USE$AGE <- as.factor(BRFSS_USE$X_AGEG5YR)
+levels(BRFSS_USE$AGE) <- c("18","25","30","35","40","45","50","55","60","65","70","75","80")
+
+#Gender 
+
+BRFSS_USE$SEXVAR <- as.factor(BRFSS_USE$SEXVAR)
+levels(BRFSS_USE$SEXVAR) <- c("Male","Female")
+
+
+#Ownership 
+is.na(BRFSS_USE$RENTHOM1) <- which(BRFSS_USE$RENTHOM1 == 7)
+is.na(BRFSS_USE$RENTHOM1) <- which(BRFSS_USE$RENTHOM1 == 9)
+is.na(BRFSS_USE$RENTHOM1) <- which(BRFSS_USE$RENTHOM1 == 3)
+na.exclude(BRFSS_USE$RENTHOM1)
+BRFSS_USE$RENTHOM1 <- as.factor(BRFSS_USE$RENTHOM1)
+levels(BRFSS_USE$RENTHOM1) <- c("Owned","Rent")
+
+#Marital Status 
+
+is.na(BRFSS_USE$MARITAL) <- which(BRFSS_USE$MARITAL == 9)
+na.exclude(BRFSS_USE$MARITAL)
+BRFSS_USE$MARST <- as.factor(BRFSS_USE$MARITAL) 
+levels(BRFSS_USE$MARST) <- c("married","divorced","widowed","separated","never married","living tgt")
+BRFSS_USE$MARST <- fct_collapse(BRFSS_USE$MARST, never.married = c("living tgt","never married"))
+fct_relevel(BRFSS_USE$MARST , "divorced", "married", "never.married","separated", "widowed")
+
+
+#Race
+
+is.na(BRFSS_USE$X_IMPRACE) <- which(BRFSS_USE$X_IMPRACE == 77)
+is.na(BRFSS_USE$X_IMPRACE) <- which(BRFSS_USE$X_IMPRACE == 99)
+na.exclude(BRFSS_USE$X_IMPRACE)
+BRFSS_USE$RACE <- as.factor(BRFSS_USE$X_IMPRACE) #Have to change name in BRFSS
+levels(BRFSS_USE$RACE) <- c("White","Black", "American Indian/Alaskan Native", "Asian", "Pacific","Other Race","Multiracial")
+BRFSS_USE$RACE <- fct_collapse(BRFSS_USE$RACE, Asian = c("Asian", "Pacific"))
+fct_relevel(BRFSS_USE$RACE, "American Indian/Alaskan Native", "Asian", "Black","Multiracial", "Other Race", "White")
+
+
+
+#Hispanic
+is.na(BRFSS_USE$X_HISPANC) <- which(BRFSS_USE$X_HISPANC == 9)
+na.exclude(BRFSS_USE$X_HISPANC)
+BRFSS_USE$X_HISPANC <- as.factor(BRFSS_USE$X_HISPANC)
+levels(BRFSS_USE$X_HISPANC) <- c("Yes","No")
+
+#Health Coverage
+
+is.na(BRFSS_USE$HLTHPLN1) <- which(BRFSS_USE$HLTHPLN1 == 9)
+is.na(BRFSS_USE$HLTHPLN1) <- which(BRFSS_USE$HLTHPLN1 == 7)
+na.exclude(BRFSS_USE$HLTHPLN1)
+BRFSS_USE$HLTHPLN1 <- as.factor(BRFSS_USE$HLTHPLN1)
+levels(BRFSS_USE$HLTHPLN1) <- c("Yes","No")
+fct_relevel(BRFSS_USE$HLTHPLN1, "No", "Yes")
+
+
+#In Labor force
+
+is.na(BRFSS_USE$EMPLOY1) <- which(BRFSS_USE$EMPLOY1 == 9)
+na.exclude(BRFSS_USE$EMPLOY1)
+BRFSS_USE$LABFORCE <- as.factor(BRFSS_USE$EMPLOY1)
+levels(BRFSS_USE$LABFORCE) <- c("Employed wage","self-employed","out of work","out of work 1<", "homemaker", "student","retired","disabled")
+BRFSS_USE$LABFORCE <- fct_collapse(BRFSS_USE$LABFORCE, Not.in.LF = c("out of work","homemaker","student","retired","disabled"))
+BRFSS_USE$LABFORCE <- fct_collapse(BRFSS_USE$LABFORCE, in.LF = c("Employed wage","self-employed","out of work 1<"))
+fct_relevel(BRFSS_USE$LABFORCE, "Not.in.LF", "in.LF")
+
+#Education
+is.na(BRFSS_USE$EDUCA) <- which(BRFSS_USE$EDUCA == 9)
+na.exclude(BRFSS_USE$EDUCA)
+BRFSS_USE$EDUCA <- as.factor(BRFSS_USE$EDUCA)
+levels(BRFSS_USE$EDUCA) <- c("kinder","Grades 1 through 8","Grades 9 through 11","Grade 12 or GED", "College 1 year to 3 years", "College 4 years or more")
+BRFSS_USE$EDUCA <- fct_collapse(BRFSS_USE$EDUCA, Elementary = c("kinder","Grades 1 through 8"))
+BRFSS_USE$EDUCA <- fct_collapse(BRFSS_USE$EDUCA, SomeHS = c("Grades 9 through 11"))
+BRFSS_USE$EDUCA <- fct_collapse(BRFSS_USE$EDUCA, HS = c("Grade 12 or GED"))
+BRFSS_USE$EDUCA <- fct_collapse(BRFSS_USE$EDUCA, SomeC = c("College 1 year to 3 years"))
+BRFSS_USE$EDUCA <- fct_collapse(BRFSS_USE$EDUCA, College = c("College 4 years or more"))
+
+```
+
+
+ACS Descriptive stats table for househould income (now in levels):
+```{r}
+library(table1)
+table1::label(acs2017_ny$INCOME2) <- "Household Income"
+
+table1::table1(~INCOME2 | borough, data = acs2017_ny)
+```
+
+
+
+Attempt to impute NA values in our working dataset; discarded. 
+```{r}
+#library(mice)
+#init = mice(BRFSS_USE, maxit = 0) 
+#meth = init$method
+#predM = init$predictorMatrix
+```
+
+Preliminary work needed for Random Forest (Spliting data into training/test sets) and using regression of 10 demographic variables to classify people living in NYC:
+
+```{r}
+require("standardize")
+set.seed(654321)
+NN1 <- length(acs2017_ny$in_NYC)
+restrict_1 <- (runif(NN1) < 0.20) # use 20% as training data
+summary(restrict_1)
+dat_train1 <- subset(acs2017_ny, restrict_1)
+dat_test1 <- subset(acs2017_ny, !restrict_1)
+sobj1 <- standardize(in_NYC ~  INCOME2 + RENTHOM1 + RACE + X_HISPANC + EDUCA + LABFORCE + HLTHPLN1 + AGE + MARST + SEXVAR, dat_train1, family = binomial, na.action = na.pass)
+
+s_dat_test1 <- predict(sobj1, dat_test1)
+```
+Random Forest Model1:
+
+```{r}
+require('randomForest')
+set.seed(54321)
+model_rf1 <- randomForest(in_NYC ~., data = sobj1$data, na.action = na.exclude)
+print(model_rf1)
+round(importance(model_rf1),2)
+varImpPlot(model_rf1, main = "Variable Importance Plot 1")
+# look at confusion matrix for this too
+pred_model1 <- predict(model_rf1, s_dat_test1)
+```
+
+
+Subset BRFSS for people in metro NYS only 
+```{r}
+BRFSS.SUBSET.RULE <- (BRFSS_USE$X_STATE == 36) & (BRFSS_USE$X_METSTAT == 1)
+BRFSS.SUBSET <- subset(BRFSS_USE,BRFSS.SUBSET.RULE) 
+
+```
+
+
+Create a variable in BRFSS w/ the inputed values for living in NYC (yes/no):
+```{r}
+s_dat_test2 <- predict(sobj1, newdata = BRFSS.SUBSET)
+BRFSS.SUBSET$in_NYC <- predict(model_rf1, newdata = s_dat_test2,)
+summary(BRFSS.SUBSET$in_NYC)
+plot(BRFSS.SUBSET$in_NYC, main = "NYC Resident Classification")
+```
+
+Now, we do borough predictions. 
+
+Repeat the process for classifying people in each borough using ACS:
+```{r}
+require("standardize")
+set.seed(54321)
+NN <- length(acs2017_ny$borough)
+restrict_2 <- as.logical(round(runif(NN,min=0,max=0.75))) # use fraction as training data
+#restrict_2 <- (runif(NN) < 0.2) # use 20% as training data
+summary(restrict_2)
+dat_train2 <- subset(acs2017_ny, restrict_2)
+dat_test2 <- subset(acs2017_ny, !restrict_2)
+sobj2 <- standardize(borough ~ INCOME2 + RENTHOM1 + RACE + X_HISPANC + EDUCA + LABFORCE  + HLTHPLN1 + AGE + MARST, dat_train2, family = binomial)
+
+s_dat_test3 <- predict(sobj2, dat_test2)
+```
+Random Forest Model2:
+```{r}
+
+require('randomForest')
+set.seed(54321)
+model_rf2 <- randomForest(borough ~., data = sobj2$data, na.action = na.omit)
+print(model_rf2)
+round(importance(model_rf2),2)
+varImpPlot(model_rf2, main = "Variable Importance Plot 2")
+# look at confusion matrix for this too
+pred_model2 <- predict(model_rf2,  s_dat_test3)
+table(pred = pred_model2, true = dat_test2$borough)
+
+```
+
+
+Subset for people living in NYC only:
+```{r}
+BRFSS.SUBSET.RULE2 <- (BRFSS.SUBSET$in_NYC == "Yes")
+BRFSS.SUBSET2 <- subset(BRFSS.SUBSET,BRFSS.SUBSET.RULE2) 
+```
+
+Predict borough:
+```{r}
+s_dat_test3 <- predict(sobj2, BRFSS.SUBSET2)
+BRFSS.SUBSET2$borough <- predict(model_rf2, s_dat_test3, na.action=na.exclude)
+summary(BRFSS.SUBSET2$borough)
+plot(BRFSS.SUBSET2$borough, main = "NYC-Borough Resident Classification")
+```
+Visualize results from inputation:
+```{r}
+plot(BRFSS.SUBSET2$borough)
+```
+
+Table w/ descriptive stats for the BRFSS subset we'll be working with:
+```{r}
+library(table1)
+table1::label(BRFSS.SUBSET2$INCOME2) <- "Household Income"
+table1::label(BRFSS.SUBSET2$RENTHOM1) <- "Home Ownership Type"
+table1::label(BRFSS.SUBSET2$RACE) <- "Race"
+table1::label(BRFSS.SUBSET2$X_HISPANC) <- "Hispanic (Yes/No)"
+table1::label(BRFSS.SUBSET2$EDUCA) <- "Educational Attainment"
+table1::label(BRFSS.SUBSET2$LABFORCE) <- "Employment Status"
+table1::label(BRFSS.SUBSET2$HLTHPLN1) <- "Healthplan Coverage"
+table1::label(BRFSS.SUBSET2$AGE) <- "Age Group"
+table1::label(BRFSS.SUBSET2$MARST) <- "Marital Status"
+
+table1::table1(~INCOME2 + RENTHOM1 + RACE + X_HISPANC + EDUCA + LABFORCE  + HLTHPLN1 + AGE + MARST | borough, data = BRFSS.SUBSET2)
+```
+
+Linear Regression1: 
+
+```{r}
+library(stargazer)
+OLS1 <- lm(X_VEGESU1 ~ INCOME2, data = BRFSS.SUBSET2)
+stargazer(OLS1,type = "text" )
+```
+
+Linear Regression2:
+
+```{r}
+library(stargazer)
+OLS2 <- lm(X_FRUTSU1 ~ INCOME2, data = BRFSS.SUBSET2)
+stargazer(OLS2,type = "text" )
+```
+
+
+Recoding for the fruit variables is needed, since we are trying to access whether a person eats fruits daily or not.  
+
+Fruits Daily:
+```{r}
+#NAs 
+is.na(BRFSS.SUBSET2$FRUIT2) <- which(BRFSS.SUBSET2$FRUIT2 == 777) 
+is.na(BRFSS.SUBSET2$FRUIT2) <- which(BRFSS.SUBSET2$FRUIT2 == 999)
+#Creates dummy for daily consumption:
+BRFSS.SUBSET2$Daily.fruit <- ifelse((BRFSS.SUBSET2$FRUIT2 >= 101) & (BRFSS.SUBSET2$FRUIT2 <= 199), 1, 0)
+
+BRFSS.SUBSET2$Daily.fruit  <- as.factor(BRFSS.SUBSET2$Daily.fruit)
+levels(BRFSS.SUBSET2$Daily.fruit) <- c("Yes", "No")
+
+summary(BRFSS.SUBSET2$Daily.fruit)
+```
+
+
+Veggies daily 
+```{r}
+#NAs 
+is.na(BRFSS.SUBSET2$FVGREEN1) <- which(BRFSS.SUBSET2$FVGREEN1== 777)
+is.na(BRFSS.SUBSET2$FVGREEN1) <- which(BRFSS.SUBSET2$FVGREEN1 == 999)
+#Creates dummy for daily consumption:
+BRFSS.SUBSET2$Daily.greens <- ifelse((BRFSS.SUBSET2$FVGREEN1 >= 101) & (BRFSS.SUBSET2$FVGREEN1 <= 199), 1, 0)
+
+BRFSS.SUBSET2$Daily.greens  <- as.factor(BRFSS.SUBSET2$Daily.greens)
+levels(BRFSS.SUBSET2$Daily.greens) <- c("Yes", "No")
+```
+
+Table to visualize the consumption of veggies by borough:
+```{r}
+table(BRFSS.SUBSET2$Daily.greens, BRFSS.SUBSET2$borough)
+
+library(table1)
+table1::label(BRFSS.SUBSET2$Daily.greens) <- "Consumes Vegetables Daily?"
+table1::label(BRFSS.SUBSET2$boroug) <- "NYC Borough"
+
+table1::table1(~ Daily.greens | borough, data = BRFSS.SUBSET2)
+```
+From there we can already see that there isn't much of a difference accross the boroughs, which sucks for our alternative hypothesis. 
+
+Run logits & create graphs:
+```{r}
+require(stargazer)
+require(effects)
+Model.Logit <- glm(BRFSS.SUBSET2$Daily.fruit ~ borough,
+            family = binomial, data = BRFSS.SUBSET2)
+
+summary(Model.Logit)
+stargazer(Model.Logit, type = "html")
+plot(allEffects(Model.Logit), main = "Borough Effect on the Likeability of Consuming Fruits Daily", ylab = "Likeability", xlab = "Borough" )
+```
+
+```{r}
+Model.Logit2 <- glm(Daily.greens ~ borough,
+            family = binomial, data = BRFSS.SUBSET2)
+
+summary(Model.Logit2)
+require("effects")
+stargazer(Model.Logit2, type = "html")
+plot(allEffects(Model.Logit2), main = "Borough Effect on the Likeability of Consuming Veggies Daily", ylab = "Likeability", xlab = "Borough")
+```
+
+Create a variable for people who eat both fruits and veggies daily:
+```{r}
+BRFSS.SUBSET2$Healthy.ppl <- ifelse((BRFSS.SUBSET2$Daily.fruit == "Yes") & (BRFSS.SUBSET2$Daily.greens == "Yes"), 1, 0)
+BRFSS.SUBSET2$Healthy.ppl  <- as.factor(BRFSS.SUBSET2$Healthy.ppl)
+levels(BRFSS.SUBSET2$Healthy.ppl) <- c("Yes", "No")
+summary(BRFSS.SUBSET2$Healthy.ppl)
+```
+Logit:
+```{r}
+
+Model.Logit3 <- glm(Healthy.ppl ~ borough,
+            family = binomial, data = BRFSS.SUBSET2)
+
+summary(Model.Logit3)
+require("effects")
+plot(allEffects(Model.Logit2), main = "Borough Effect on the Likeability of Consuming Cs Daily", ylab = "Likeability", xlab = "Borough")
+
+```
+
+Here we tried to see the effect of income:
+```{r}
+
+Model.Logit4 <- glm(Daily.greens ~ INCOME2,
+            family = binomial, data = BRFSS.SUBSET2)
+
+summary(Model.Logit4)
+require("effects")
+plot(allEffects(Model.Logit4))
+
+```
+That also contradicts our major assumptions :(
+
+Here we try to see if that's true for the overall dataset, just in case our sampling (which is based on ficticious data from the imputation) is affecting the relationship between income and the intake of veggies
+```{r}
+BRFSS.SUBSET$Daily.greens <- ifelse((BRFSS.SUBSET$FVGREEN1 >= 101) & (BRFSS.SUBSET$FVGREEN1 <= 199), 1, 0)
+BRFSS.SUBSET$Daily.greens  <- as.factor(BRFSS.SUBSET$Daily.greens)
+levels(BRFSS.SUBSET$Daily.greens) <- c("Yes", "No")
+
+Model.Logit6 <- glm(Daily.greens ~ INCOME2,
+            family = binomial, data = BRFSS.SUBSET)
+
+summary(Model.Logit6)
+require("effects")
+plot(allEffects(Model.Logit6))
+```
+It looks like yes, but we see that the relationships isn't really statistically significant
+
+PS: All discussion around the output from this file is disclosed in the PDF paper *only*.
+
+
+
